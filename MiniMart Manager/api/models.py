@@ -20,11 +20,8 @@ class Supplier(Model):
     phone = fields.CharField(max_length=15)
 
 
-#create pydantic models
+# create pydantic models
 product_pydantic = pydantic_model_creator(Product, name="Product")
 product_pydanticIn = pydantic_model_creator(Product, name="ProductIn", exclude_readonly=True)
-# product_pydantic: Used when sending product data to the client (GET response).
-# product_pydanticIn: Used when receiving input from the client (POST/PUT).
-
 supplier_pydantic = pydantic_model_creator(Supplier, name="Supplier")
 supplier_pydanticIn = pydantic_model_creator(Supplier, name="SupplierIn", exclude_readonly=True)
