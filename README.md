@@ -57,11 +57,15 @@ git clone https://github.com/your-username/minimart-manager.git
 cd minimart-manager
 ````
 
-2. **Create `.env` file** in root (same level as `docker-compose.yml`):
+2. **Create `.env` file** in root (same level as `docker-compose.yml`) and add the following:
 
 ```
 DB_URI=postgres://myuser:mypassword@db:5432/karkibase
+EMAIL=youremail@gmail.com
+PASS=your-email-app-password
 ```
+
+> 🔐 **Note**: `EMAIL` and `PASS` are required for sending email notifications to suppliers. Use an app-specific password if using Gmail.
 
 3. **Build & Start Containers**
 
