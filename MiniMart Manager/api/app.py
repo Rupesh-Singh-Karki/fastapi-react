@@ -1,40 +1,23 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from tortoise.contrib.fastapi import register_tortoise
-from models import (
-    supplier_pydantic, supplier_pydanticIn, Supplier,
-    product_pydantic, product_pydanticIn, Product
-)
-
-# email
-from typing import List
+from models import supplier_pydantic, supplier_pydanticIn, Supplier, product_pydanticIn, Product
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
-from pydantic import BaseModel, EmailStr, SecretStr
-from starlette.responses import JSONResponse
-
-# dotenv
+from pydantic import BaseModel, SecretStr
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 DB_URI = os.getenv('DB_URI')
-
-# credentials
 EMAIL = os.getenv('EMAIL')
 PASS = os.getenv('PASS')
 
-# adding cors headers (Cross-Origin Resource Sharing)
-from fastapi.middleware.cors import CORSMiddleware
-
+# Initialize FastAPI and CORS
 app = FastAPI()
-
-# adding cors urls
-origins = ["http://localhost:3000"]
-
-# add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,83 +27,7 @@ app.add_middleware(
 def index():
     return {"Msg": "go to /docs for documentation"}
 
-@app.post('/supplier')
-async def add_supplier(supplier_info: supplier_pydanticIn):
-    supplier_obj = await Supplier.create(**supplier_info.dict(exclude_unset=True))
-    response = await supplier_pydantic.from_tortoise_orm(supplier_obj)
-    return {"Status": "ok", "data": response}
-
-@app.get('/supplier')
-async def get_all_suppliers():
-    response = await supplier_pydantic.from_queryset(Supplier.all())
-    return {"Status": "ok", "data": response}
-
-@app.get('/supplier/{supplier_id}')
-async def get_specific_supplier(supplier_id: int):
-    response = await supplier_pydantic.from_queryset_single(Supplier.get(id=supplier_id))
-    return {"Status": "ok", "data": response}
-
-@app.put('/supplier/{supplier_id}')
-async def update_supplier(supplier_id: int, updated_info: supplier_pydanticIn):
-    supplier = await Supplier.get(id=supplier_id)
-    update_info = updated_info.dict(exclude_unset=True)
-    supplier.name = update_info['name']
-    supplier.company = update_info['company']
-    supplier.phone = update_info['phone']
-    supplier.email = update_info['email']
-    await supplier.save()
-    response = await supplier_pydantic.from_tortoise_orm(supplier)
-    return {"Status": "ok", "data": response}
-
-@app.delete('/supplier/{supplier_id}')
-async def delete_supplier(supplier_id: int):
-    await Supplier.get(id=supplier_id).delete()
-    return {"Status": "ok"}
-
-@app.post('/product/{supplier_id}')
-async def add_product(supplier_id: int, product_details: product_pydanticIn):
-    supplier = await Supplier.get(id=supplier_id)
-    product_dict = product_details.dict(exclude_unset=True)
-    product_dict['revenue'] = product_dict.get('quantity_sold', 0) * product_dict.get('unit_price', 0)
-    product_obj = await Product.create(**product_dict, supplied_by=supplier)
-    response = await product_pydantic.from_tortoise_orm(product_obj)
-    return {"Status": "ok", "data": response}
-
-@app.get('/product')
-async def all_products():
-    response = await product_pydantic.from_queryset(Product.all())
-    return {"Status": "ok", "data": response}
-
-@app.get('/product/{id}')
-async def specific_product(id: int):
-    response = await product_pydantic.from_queryset_single(Product.get(id=id))
-    return {"Status": "ok", "data": response}
-
-@app.put('/product/{id}')
-async def update_product(id: int, update_info: product_pydanticIn):
-    product = await Product.get(id=id)
-    info = update_info.dict(exclude_unset=True)
-    product.name = info['name']
-    product.quantity_in_Stock = info['quantity_in_Stock']
-    product.revenue += info['quantity_sold'] * info['unit_price']
-    product.quantity_sold += info['quantity_sold']
-    product.unit_price = info['unit_price']
-    await product.save()
-    response = await product_pydantic.from_tortoise_orm(product)
-    return {"Status": "ok", "data": response}
-
-@app.delete('/product/{id}')
-async def delete_product(id: int):
-    await Product.filter(id=id).delete()
-    return {"Status": "ok"}
-
-class EmailSchema(BaseModel):
-    email: List[EmailStr]
-
-class EmailContent(BaseModel):
-    message: str
-    subject: str
-
+# Email config
 conf = ConnectionConfig(
     MAIL_USERNAME=EMAIL,
     MAIL_PASSWORD=SecretStr(PASS),
@@ -133,33 +40,95 @@ conf = ConnectionConfig(
     VALIDATE_CERTS=True,
 )
 
-@app.post('/email/{product_id}')
-async def send_email(product_id: int, content: EmailContent):
-    product = await Product.get(id=product_id)
-    supplier = await product.supplied_by
-    supplier_email = [supplier.email]
-    html = f"""
-    <h5>{supplier.company}</h5>
-    <br>
-    <p>{content.message}</p>
-    <br>
-    <h6>Best Regards</h6>
-    <h6>Your Company</h6>
-    """
-    message = MessageSchema(
-        subject=content.subject,
-        recipients=supplier_email,
-        body=html,
-        subtype=MessageType.html
-    )
-    fm = FastMail(conf)
-    await fm.send_message(message)
+class EmailContent(BaseModel):
+    subject: str
+    message: str
+
+# Supplier endpoints
+@app.post('/supplier')
+async def add_supplier(supplier_data: supplier_pydanticIn):
+    s = await Supplier.create(**supplier_data.dict(exclude_unset=True))
+    return {"Status": "ok", "data": await supplier_pydantic.from_tortoise_orm(s)}
+
+@app.get('/supplier')
+async def list_suppliers():
+    qs = await Supplier.all()
+    data = [await supplier_pydantic.from_tortoise_orm(s) for s in qs]
+    return {"Status": "ok", "data": data}
+
+@app.get('/supplier/{supplier_id}')
+async def get_supplier(supplier_id: int):
+    s = await Supplier.get(id=supplier_id)
+    return {"Status": "ok", "data": await supplier_pydantic.from_tortoise_orm(s)}
+
+@app.put('/supplier/{supplier_id}')
+async def update_supplier(supplier_id: int, payload: supplier_pydanticIn):
+    s = await Supplier.get(id=supplier_id)
+    for k, v in payload.dict(exclude_unset=True).items(): setattr(s, k, v)
+    await s.save()
+    return {"Status": "ok", "data": await supplier_pydantic.from_tortoise_orm(s)}
+
+@app.delete('/supplier/{supplier_id}')
+async def delete_supplier(supplier_id: int):
+    await Supplier.filter(id=supplier_id).delete()
     return {"Status": "ok"}
 
-register_tortoise(
-    app,
-    db_url=DB_URI,
-    modules={"models": ["models"]},
-    generate_schemas=True,
-    add_exception_handlers=True
-)
+# Product endpoints using .values() to include supplied_by_id
+@app.post('/product/{supplier_id}')
+async def add_product(supplier_id: int, product_data: product_pydanticIn):
+    await Supplier.get(id=supplier_id)  # ensure supplier exists
+    p = await Product.create(**product_data.dict(exclude_unset=True), supplied_by_id=supplier_id)
+    # fetch new record with supplied_by_id
+    record = await Product.filter(id=p.id).values(
+        'id', 'name', 'quantity_in_Stock', 'quantity_sold', 'unit_price', 'revenue', 'supplied_by_id'
+    ).first()
+    # convert decimals to string
+    record['unit_price'] = str(record['unit_price'])
+    record['revenue'] = str(record['revenue'])
+    return {"Status": "ok", "data": record}
+
+@app.get('/product')
+async def list_products():
+    records = await Product.all().values(
+        'id', 'name', 'quantity_in_Stock', 'quantity_sold', 'unit_price', 'revenue', 'supplied_by_id'
+    )
+    for rec in records:
+        rec['unit_price'] = str(rec['unit_price'])
+        rec['revenue'] = str(rec['revenue'])
+    return {"Status": "ok", "data": records}
+
+@app.get('/product/{product_id}')
+async def get_product(product_id: int):
+    rec = await Product.filter(id=product_id).values(
+        'id', 'name', 'quantity_in_Stock', 'quantity_sold', 'unit_price', 'revenue', 'supplied_by_id'
+    ).first()
+    rec['unit_price'] = str(rec['unit_price'])
+    rec['revenue'] = str(rec['revenue'])
+    return {"Status": "ok", "data": rec}
+
+@app.put('/product/{product_id}')
+async def update_product(product_id: int, payload: product_pydanticIn):
+    await Product.filter(id=product_id).update(**payload.dict(exclude_unset=True))
+    # fetch updated record
+    rec = await Product.filter(id=product_id).values(
+        'id', 'name', 'quantity_in_Stock', 'quantity_sold', 'unit_price', 'revenue', 'supplied_by_id'
+    ).first()
+    rec['unit_price'] = str(rec['unit_price'])
+    rec['revenue'] = str(rec['revenue'])
+    return {"Status": "ok", "data": rec}
+
+@app.delete('/product/{product_id}')
+async def delete_product(product_id: int):
+    await Product.filter(id=product_id).delete()
+    return {"Status": "ok"}
+
+# Email endpoint
+@app.post('/email/{product_id}')
+async def email_supplier(product_id: int, email: EmailContent):
+    supplier = await Product.get(id=product_id).supplied_by
+    msg = MessageSchema(subject=email.subject, recipients=[supplier.email], body=f"<p>{email.message}</p>", subtype=MessageType.html)
+    await FastMail(conf).send_message(msg)
+    return {"Status": "ok"}
+
+# Tortoise ORM registration
+register_tortoise(app, db_url=DB_URI, modules={"models": ["models"]}, generate_schemas=True, add_exception_handlers=True)

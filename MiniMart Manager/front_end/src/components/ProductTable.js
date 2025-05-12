@@ -1,23 +1,21 @@
-import React, { useEffect, useContext, useState } from "react";
+import React, { useEffect, useContext } from "react";
 import Table from 'react-bootstrap/Table';  
 import { ProductContext } from "../ProductContext";
 import ProductRow from "./ProductRow";
 import { useNavigate } from 'react-router-dom';
 import { UpdateContext } from "../UpdateProductContext"; 
-import { SupplierContext } from '../SupplierContext'
+import { SupplierContext } from '../SupplierContext';
 
 const ProductsTable = () => {
     const [products, setProducts, searchTerm] = useContext(ProductContext);
     const [updateProductInfo, setUpdateProductInfo] = useContext(UpdateContext);
     const [supplierDetail, setSupplierDetail] = useContext(SupplierContext);
-    let navigate = useNavigate();
+    const navigate = useNavigate();
 
     const handleDelete = (id) => {
-        fetch("http://127.0.0.1:8000/product/" + id, {
+        fetch(`http://127.0.0.1:8000/product/${id}`, {
             method: "DELETE",
-            headers: {
-                accept: 'application/json'
-            }
+            headers: { accept: 'application/json' }
         })
         .then(resp => resp.json())
         .then(result => {
@@ -32,28 +30,30 @@ const ProductsTable = () => {
     };
 
     const handleUpdate = (id) => {
-        const product = products.data.filter(product => product.id === id)[0];
+        const product = products.data.find(p => p.id === id);
         setUpdateProductInfo({
             ProductName: product.name,
             QuantityInStock: product.quantity_in_Stock,
             QuantitySold: product.quantity_sold,
             UnitPrice: product.unit_price,
             Revenue: product.revenue,
-            ProductId: id
+            ProductId: product.id,
+            Supplier: product.supplied_by_id  // 🧠 this line is essential
         });
         navigate("/updateproduct");
     };
 
-    const handleSupplier = (id) => {
-        console.log("Fetching supplier with ID:", id);  // Log ID to verify
-        fetch("http://localhost:8000/supplier/" + id, {
-            headers: {
-                Accept: 'application/json'
-            }
+    const handleSupplier = (supplierId) => {
+        if (!supplierId) {
+            alert("No supplier linked to this product.");
+            return;
+        }
+
+        fetch(`http://localhost:8000/supplier/${supplierId}`, {
+            headers: { Accept: 'application/json' }
         })
         .then(resp => resp.json())
         .then(result => {
-            console.log(result);  // Log result to verify the response
             if (result.Status === 'ok') {
                 setSupplierDetail({ ...result.data });
                 navigate("/supplierpage");
@@ -62,11 +62,10 @@ const ProductsTable = () => {
             }
         })
         .catch(err => {
-            console.error("Error fetching supplier:", err);  // Catch any fetch errors
+            console.error("Error fetching supplier:", err);
+            alert("Fetch error: " + err.message);
         });
     };
-    
-    
 
     useEffect(() => {
         fetch("http://127.0.0.1:8000/product")
@@ -76,15 +75,13 @@ const ProductsTable = () => {
             });
     }, []); 
 
-    // 🧠 filter products based on searchTerm
-    const filteredProducts = (products.data || []).filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    // Loading message while fetching products
     if (!products.data) {
         return <div>Loading products...</div>;
     }
+
+    const filteredProducts = products.data.filter(product =>
+        product.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div>
@@ -110,6 +107,7 @@ const ProductsTable = () => {
                             quantity_sold={product.quantity_sold}
                             unit_price={product.unit_price}
                             revenue={product.revenue}
+                            supplier_id={product.supplied_by_id}
                             handleDelete={handleDelete}
                             handleUpdate={handleUpdate}
                             handleSupplier={handleSupplier}
